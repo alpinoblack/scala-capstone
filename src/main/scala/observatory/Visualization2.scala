@@ -23,7 +23,8 @@ object Visualization2 {
     d10: Temperature,
     d11: Temperature
   ): Temperature = {
-    ???
+    val CellPoint(x, y) = point
+    d00 * (1 - x) * (1 - y) + d10 * x * (1 - y) + d01 * (1 - x) * y + d11 * x * y
   }
 
   /**
@@ -37,7 +38,19 @@ object Visualization2 {
     colors: Iterable[(Temperature, Color)],
     tile: Tile
   ): Image = {
-    ???
+    import Visualization._
+
+    val imgArr = new Array[Pixel](256*256)
+
+    val Tile(offSetX, offSetY, zoom) = tile
+
+    for (idxX <- 0 until 256)
+      for (idxY <- 0 until 256) {
+        val newColor = interpolateColor(colors ,grid(Tile(offSetX*256 + idxX, offSetY*256 + idxY, zoom + 8).toLocation.toGridLocation))
+        imgArr(idxX + idxY*256) = Pixel(newColor.red, newColor.green, newColor.blue, 127)
+      }
+
+    Image(256,256,imgArr)
   }
 
 }

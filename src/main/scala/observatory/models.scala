@@ -5,7 +5,9 @@ package observatory
   * @param lat Degrees of latitude, -90 ≤ lat ≤ 90
   * @param lon Degrees of longitude, -180 ≤ lon ≤ 180
   */
-case class Location(lat: Double, lon: Double)
+case class Location(lat: Double, lon: Double) {
+  def toGridLocation: GridLocation = GridLocation(lat.toInt, lon.toInt)
+}
 
 /**
   * Introduced in Week 3. Represents a tiled web map tile.
@@ -15,7 +17,14 @@ case class Location(lat: Double, lon: Double)
   * @param y Y coordinate of the tile
   * @param zoom Zoom level, 0 ≤ zoom ≤ 19
   */
-case class Tile(x: Int, y: Int, zoom: Int)
+case class Tile(x: Int, y: Int, zoom: Int) {
+  def toLocation: Location = {
+    import scala.math._
+    Location(
+      atan(sinh(Pi * (1.0 - 2.0 * y / (1 << zoom)))).toDegrees, x.toDouble / (1 << zoom) * 360.0 - 180.0
+    )
+  }
+}
 
 /**
   * Introduced in Week 4. Represents a point on a grid composed of

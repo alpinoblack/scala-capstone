@@ -4,8 +4,8 @@ import java.nio.file.Paths
 import java.time.LocalDate
 
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.types._
 import org.apache.spark.sql.functions._
+import org.apache.spark.sql.types._
 
 /**
   * 1st milestone: data extraction
@@ -19,11 +19,15 @@ object Extraction {
       .config("spark.master", "local")
       .getOrCreate
 
+  import org.apache.log4j.{Level, Logger}
+  Logger.getLogger("org.apache.spark").setLevel(Level.WARN)
+
   import sparkSession.implicits._
 
-  case class Station(stationId: String, location: Location)
-  case class DailyTemperature(stationId: String, month: Short, day: Short, temperatureF: Temperature)
-
+  case class DailyTemperature(date :LocalDateTuple, location: Location, temperatureC: Temperature)
+  case class LocalDateTuple(year: Int, month: Int, day: Int) {
+    def toLocalDate: LocalDate = LocalDate.of(year, month, day)
+  }
 
   def fsPath(resource: String): String =
     Paths.get(getClass.getResource(resource).toURI).toString
@@ -65,19 +69,11 @@ object Extraction {
     //TODO see if filter can be replaced by drop
     //TODO using custom function in order to filter values which cannot be cast as Numerics
     val stationsDS = stationsDFraw
-     // .filter($"stn".isNull and $"wban".isNull)
       .filter($"latitude".isNotNull and $"longitude".isNotNull)
       .filter($"latitude".as[Double] >= -90 and $"latitude".as[Double] <= 90)
       .filter($"longitude".as[Double] >= -180 and $"longitude".as[Double] <= 180)
-      .withColumn("stn", coalesce($"stn", lit("")))
-      .withColumn("wban", coalesce($"wban", lit("")))
-      .map{
-        row =>
-          Station(
-            row.getAs[String]("stn") + row.getAs[String]("wban"),
-            Location(row.getAs[String]("latitude").toDouble,row.getAs[String]("longitude").toDouble)
-          )
-      }
+      .withColumn("stationId", concat(coalesce($"stn", lit("")),lit("~"),coalesce($"wban", lit(""))))
+      .select("stationId","latitude","longitude")
 
     val temperaturesDFRaw = sparkSession
       .sqlContext
@@ -91,33 +87,29 @@ object Extraction {
       .filter($"temperatureF".isNotNull)
       .filter($"month".as[Int] >=1 and $"month".as[Int] <= 12)
       .filter($"day".as[Int] >=1 and $"day".as[Int] <= 31)
-      .withColumn("stn", coalesce($"stn", lit("")))
-      .withColumn("wban", coalesce($"wban", lit("")))
+      .withColumn("stationId", concat(coalesce($"stn", lit("")),lit("~"),coalesce($"wban", lit(""))))
+      .select("stationId","month","day" ,"temperatureF")
+
+   val joined = stationsDS
+     .join(temperatureDS, usingColumn = "stationId")
       .map{
-          row =>
-            DailyTemperature(
-              row.getAs[String]("stn") + row.getAs[String]("wban"),
-              row.getAs[String]("month").toShort,
-              row.getAs[String]("day").toShort,
-              {
-                val temperatureF = row.getAs[String]("temperatureF").toDouble
-                BigDecimal((temperatureF - 32)/1.8).setScale(2, BigDecimal.RoundingMode.HALF_UP).toDouble
-              }
-            )
-        }
+        row =>
+          (
+           // LocalDate.of(year,row.getAs[Int]("month"), row.getAs[Int]("day")),
+            LocalDateTuple(year,row.getAs[String]("month").toInt, row.getAs[String]("day").toInt),
+            Location(row.getAs[String]("latitude").toDouble, row.getAs[String]("longitude").toDouble),
+            {
+              val temperatureF = row.getAs[String]("temperatureF").toDouble
+              BigDecimal((temperatureF - 32)/1.8).setScale(2, BigDecimal.RoundingMode.HALF_UP).toDouble
+            }
+        )
+      }
 
-   val joined = stationsDS.join(temperatureDS, usingColumn = "stationId")
-
-    joined.printSchema()
-    joined.filter($"stationId" === "010010").show
-    joined.show(1500)
-    stationsDS.show()
-    temperatureDS.show()
-
-/*    val temperaturesDS = spark.sqlContext.read.csv(temperaturesFile).as[DailyTemperature]
-    println(temperaturesDS.rdd.first())*/
-
-    Seq.empty
+    joined.collect() 
+      .par
+      .map {
+        case (date, location, temperature) => (date.toLocalDate, location, temperature)
+      }.toVector
 
   }
 
@@ -126,7 +118,9 @@ object Extraction {
     * @return A sequence containing, for each location, the average temperature over the year.
     */
   def locationYearlyAverageRecords(records: Iterable[(LocalDate, Location, Temperature)]): Iterable[(Location, Temperature)] = {
-    ???
+    records.groupBy(_._2).mapValues {
+      values => values.map(_._3).sum / values.size
+    }.toSeq
   }
 
 }

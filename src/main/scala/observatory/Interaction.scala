@@ -12,7 +12,7 @@ object Interaction {
     * @return The latitude and longitude of the top-left corner of the tile, as per http://wiki.openstreetmap.org/wiki/Slippy_map_tilenames
     */
   def tileLocation(tile: Tile): Location = {
-    ???
+    tile.toLocation
   }
 
   /**
@@ -22,7 +22,19 @@ object Interaction {
     * @return A 256×256 image showing the contents of the given tile
     */
   def tile(temperatures: Iterable[(Location, Temperature)], colors: Iterable[(Temperature, Color)], tile: Tile): Image = {
-    ???
+    import Visualization._
+
+    val imgArr = new Array[Pixel](256*256)
+
+    val Tile(offSetX, offSetY, zoom) = tile
+
+    for (idxX <- 0 until 256)
+      for (idxY <- 0 until 256) {
+        val newColor = interpolateColor(colors ,predictTemperature(temperatures,Tile(offSetX*256 + idxX, offSetY*256 + idxY, zoom + 8).toLocation))
+        imgArr(idxX + idxY*256) = Pixel(newColor.red, newColor.green, newColor.blue, 127)
+      }
+
+    Image(256,256,imgArr)
   }
 
   /**
@@ -36,7 +48,14 @@ object Interaction {
     yearlyData: Iterable[(Year, Data)],
     generateImage: (Year, Tile, Data) => Unit
   ): Unit = {
-    ???
+    for {
+      (year, data) <- yearlyData
+      zoom <- 0 to 3
+      x <- 0 until 1 << zoom
+      y <- 0 until 1 << zoom
+    } {
+      generateImage(year, Tile(x, y, zoom), data)
+    }
   }
 
 }
